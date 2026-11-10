@@ -55,8 +55,8 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=t=>new Date(t).toLocaleString("id-ID",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
 
-const SUPABASE_URL="https://lahiykwbwawgmqzuvgie.supabase.co";          // contoh: https://abcdxyz.supabase.co
-const SUPABASE_KEY="sb_publishable_zKRriXzgBShPn2ruCGFYdQ_WXd0UgzX";          // anon / publishable key
+const SUPABASE_URL="ISI_DISINI";          // contoh: https://abcdxyz.supabase.co
+const SUPABASE_KEY="ISI_DISINI";          // anon / publishable key
 const CONFIGURED=!SUPABASE_URL.startsWith("ISI")&&!SUPABASE_KEY.startsWith("ISI");
 let sb=null;
 const byNama=(a,b)=>(a.nama||"").localeCompare(b.nama||"","id",{numeric:true});
@@ -68,6 +68,14 @@ db={doc:p=>{const[t,id]=p.split("/");const ck=async r=>{const{error}=await r;if(
   set:d=>ck(t==="reports"?sb.from(t).insert({id,...d}):sb.from(t).upsert({id,...d})),
   update:d=>ck(sb.from(t).update(d).eq("id",id)),
   delete:()=>ck(sb.from(t).delete().eq("id",id))}}};
+function errMsg(e){
+  const m=String((e&&e.message)||e),c=String((e&&e.code)||"");
+  if(!isAdmin)return "Sesi login berakhir. Silakan login admin lagi.";
+  if(c==="42501"||/row-level security|permission denied/i.test(m))return "Ditolak oleh aturan database. Pastikan email admin di fungsi is_admin() (SQL) sama persis dengan email akun login. Jalankan supabase-fix.sql.";
+  if(c==="PGRST205"||c==="42P01"||/does not exist|schema cache/i.test(m))return "Tabel belum dibuat. Jalankan supabase-fix.sql di SQL Editor Supabase.";
+  if(c==="23505")return "Data dengan nama/NIS tersebut sudah ada.";
+  return m;
+}
 function init(){
   render();
   if(!CONFIGURED)return;
@@ -87,7 +95,7 @@ function vLogin(){
 }
 async function masuk(){
   try{const{error}=await sb.auth.signInWithPassword({email:$("#lEm").value.trim(),password:$("#lPw").value});if(error)throw error;tab="rekap";render()}
-  catch(e){$("#lMsg").innerHTML='<div class="msg er">Email atau kata sandi salah.</div>'}
+  catch(e){const m=String(e.message||e);$("#lMsg").innerHTML='<div class="msg er">Gagal masuk: '+esc(/Invalid login/i.test(m)?"email atau kata sandi salah (atau akun belum dibuat/dikonfirmasi di Supabase).":/not confirmed/i.test(m)?"email belum dikonfirmasi. Di Supabase buka Authentication > Users, klik akun, lalu Confirm user.":m)+'</div>'}
 }
 function render(){
   const tabs=[["scan","Scan QR"]];
@@ -161,7 +169,7 @@ function vRekap(){
 function vRekapKeep(el){const p=el.selectionStart;vRekap();const n=$("#app input");n.focus();n.setSelectionRange(p,p)}
 async function pilih(el){
   const jenis=el.value;const id=el.dataset.id;
-  try{await db.doc("reports/"+id).update({jenis,status:jenis?"sudah":"baru",alasan:jenis===JENIS[0]?(reports.find(r=>r.id===id)?.alasan||""):""})}catch(e){alert("Gagal menyimpan.")}
+  try{await db.doc("reports/"+id).update({jenis,status:jenis?"sudah":"baru",alasan:jenis===JENIS[0]?(reports.find(r=>r.id===id)?.alasan||""):""})}catch(e){alert("Gagal menyimpan: "+errMsg(e))}
 }
 async function alasan(id){const v=$("#al-"+id).value;try{await db.doc("reports/"+id).update({alasan:v})}catch(e){}}
 async function hapusR(id){if(confirm("Hapus laporan ini?"))try{await db.doc("reports/"+id).delete()}catch(e){}}
@@ -189,9 +197,9 @@ function vSiswa(){
 async function simpanS(){
   const nis=$("#sNis").value.trim(),nama=$("#sNama").value.trim(),kelas=$("#sKelas").value.trim();
   if(!nis||!nama||!kelas||/[\/\\'"\s]/.test(nis)){$("#sMsg").innerHTML='<div class="msg er">Isi semua kolom. NIS tidak boleh mengandung spasi atau tanda baca khusus.</div>';return}
-  try{await db.doc("students/"+nis).set({nama,kelas});edit=null;vSiswa()}catch(e){$("#sMsg").innerHTML='<div class="msg er">Gagal menyimpan data.</div>'}
+  try{await db.doc("students/"+nis).set({nama,kelas});edit=null;vSiswa()}catch(e){$("#sMsg").innerHTML='<div class="msg er">Gagal menyimpan: '+esc(errMsg(e))+'</div>'}
 }
-async function hapusS(id){if(confirm("Hapus siswa ini?"))try{await db.doc("students/"+id).delete()}catch(e){}}
+async function hapusS(id){if(confirm("Hapus siswa ini?"))try{await db.doc("students/"+id).delete()}catch(e){alert("Gagal menghapus: "+errMsg(e))}}
 
 /* ---------- KELAS ---------- */
 function vKelas(){
@@ -204,12 +212,12 @@ async function simpanK(){
   const n=$("#kNama").value.trim();
   if(!n){$("#kMsg").innerHTML='<div class="msg er">Nama kelas tidak boleh kosong.</div>';return}
   if(classes.some(c=>c.nama.toLowerCase()===n.toLowerCase())){$("#kMsg").innerHTML='<div class="msg er">Kelas sudah ada.</div>';return}
-  try{await db.doc("classes/k"+Date.now()).set({nama:n})}catch(e){$("#kMsg").innerHTML='<div class="msg er">Gagal menyimpan.</div>'}
+  try{await db.doc("classes/k"+Date.now()).set({nama:n});$("#kNama").value="";$("#kMsg").innerHTML='<div class="msg ok">Kelas ditambahkan.</div>'}catch(e){$("#kMsg").innerHTML='<div class="msg er">Gagal menyimpan: '+esc(errMsg(e))+'</div>'}
 }
 async function hapusK(id){
   const c=classes.find(x=>x.id===id);if(!c)return;
   if(students.some(s=>s.kelas===c.nama)){alert("Kelas masih memiliki siswa. Pindahkan atau hapus siswanya dulu.");return}
-  if(confirm("Hapus kelas "+c.nama+"?"))try{await db.doc("classes/"+id).delete()}catch(e){}
+  if(confirm("Hapus kelas "+c.nama+"?"))try{await db.doc("classes/"+id).delete()}catch(e){alert("Gagal menghapus: "+errMsg(e))}
 }
 
 /* ---------- REKAP BULANAN ---------- */
