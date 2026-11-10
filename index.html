@@ -55,8 +55,8 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=t=>new Date(t).toLocaleString("id-ID",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
 
-const SUPABASE_URL="ISI_DISINI";          // contoh: https://abcdxyz.supabase.co
-const SUPABASE_KEY="ISI_DISINI";          // anon / publishable key
+const SUPABASE_URL="https://lahiykwbwawgmqzuvgie.supabase.co";          // contoh: https://abcdxyz.supabase.co
+const SUPABASE_KEY="sb_publishable_zKRriXzgBShPn2ruCGFYdQ_WXd0UgzX";          // anon / publishable key
 const CONFIGURED=!SUPABASE_URL.startsWith("ISI")&&!SUPABASE_KEY.startsWith("ISI");
 let sb=null;
 const byNama=(a,b)=>(a.nama||"").localeCompare(b.nama||"","id",{numeric:true});
