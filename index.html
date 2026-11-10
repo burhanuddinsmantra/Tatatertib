@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Catatan Pelanggaran – SMAN 1 Terara</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--tx:#1b2330;--mu:#64708a;--pr:#1d4ed8;--prt:#fff;--bd:#dde3ef;--ok:#15803d;--er:#b91c1c;--wa:#b45309;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e131c;--card:#171e2b;--tx:#e8ecf4;--mu:#93a0b8;--pr:#5b8cff;--prt:#0b1020;--bd:#2a3447;--ok:#4ade80;--er:#f87171;--wa:#fbbf24}}
+:root[data-theme="dark"]{--bg:#0e131c;--card:#171e2b;--tx:#e8ecf4;--mu:#93a0b8;--pr:#5b8cff;--prt:#0b1020;--bd:#2a3447;--ok:#4ade80;--er:#f87171;--wa:#fbbf24}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--pr);color:var(--prt);padding:14px 16px}
+header h1{margin:0;font-size:18px}header p{margin:2px 0 0;font-size:13px;opacity:.85}
+nav{display:flex;gap:6px;padding:10px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--bd)}
+nav button{border:1px solid var(--bd);background:transparent;color:var(--tx);padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;font:inherit}
+nav button.on{background:var(--pr);color:var(--prt);border-color:var(--pr)}
+main{max-width:960px;margin:0 auto;padding:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:17px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit}
+label{display:block;font-size:13px;color:var(--mu);margin:8px 0 3px}
+.btn{background:var(--pr);color:var(--prt);border:0;padding:10px 16px;border-radius:10px;cursor:pointer;font:inherit;font-weight:600}
+.btn.s{background:transparent;color:var(--tx);border:1px solid var(--bd);font-weight:400}
+.btn.d{background:var(--er);color:#fff}.btn.x{padding:6px 10px;font-size:13px}
+.row{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.bar>*{width:auto}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-align:top}th{color:var(--mu);font-weight:600;white-space:nowrap}
+.tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--bd)}
+.baru{color:var(--wa);border-color:var(--wa)}.sudah{color:var(--ok);border-color:var(--ok)}
+.msg{padding:10px 12px;border-radius:10px;margin:10px 0;border:1px solid var(--bd)}.msg.ok{color:var(--ok);border-color:var(--ok)}.msg.er{color:var(--er);border-color:var(--er)}
+#reader{width:100%;max-width:380px;margin:0 auto}
+.mu{color:var(--mu);font-size:13px}.hide{display:none}
+.qrs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.qc{border:1px solid var(--bd);border-radius:12px;padding:10px;text-align:center;background:#fff;color:#111}
+.qc div.q{display:flex;justify-content:center;margin-bottom:6px}
+@media print{header,nav,.noprint{display:none!important}body{background:#fff}.card{border:0}}
+@media (max-width:520px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Catatan Pelanggaran Tata Tertib</h1><p>SMA Negeri 1 Terara · Tim Kesiswaan</p></header>
+<nav id="nav"></nav>
+<main id="app"></main>
+
+<script>
+const JENIS=["Terlambat datang","Tidak memasukkan baju","Merokok di sekolah","Panjang rambut tidak sesuai aturan"];
+let db=null,usr=null,isAdmin=false,tab="scan",students=[],reports=[],classes=[],fBulan="",scanner=null,found=null,flash=null;
+let fKelas="",fJenis="",fStatus="",q="";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=t=>new Date(t).toLocaleString("id-ID",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+
+const SUPABASE_URL="ISI_DISINI";          // contoh: https://abcdxyz.supabase.co
+const SUPABASE_KEY="ISI_DISINI";          // anon / publishable key
+const CONFIGURED=!SUPABASE_URL.startsWith("ISI")&&!SUPABASE_KEY.startsWith("ISI");
+let sb=null;
+const byNama=(a,b)=>(a.nama||"").localeCompare(b.nama||"","id",{numeric:true});
+async function loadS(){const{data}=await sb.from("students").select("*");students=(data||[]).sort((a,b)=>(a.kelas||"").localeCompare(b.kelas||"","id",{numeric:true})||byNama(a,b));if(tab!=="scan"||!found)render()}
+async function loadC(){const{data}=await sb.from("classes").select("*");classes=(data||[]).sort(byNama);if(tab!=="scan"&&tab!=="login")render()}
+async function loadR(){if(!isAdmin){reports=[];return}const{data}=await sb.from("reports").select("*").order("ts",{ascending:false});reports=data||[];if(tab==="rekap"||tab==="bulan")render()}
+const reloadAll=()=>{loadS();loadC();loadR()};
+db={doc:p=>{const[t,id]=p.split("/");const ck=async r=>{const{error}=await r;if(error)throw error;reloadAll()};return{
+  set:d=>ck(t==="reports"?sb.from(t).insert({id,...d}):sb.from(t).upsert({id,...d})),
+  update:d=>ck(sb.from(t).update(d).eq("id",id)),
+  delete:()=>ck(sb.from(t).delete().eq("id",id))}}};
+function init(){
+  render();
+  if(!CONFIGURED)return;
+  sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  sb.auth.onAuthStateChange((ev,session)=>{
+    isAdmin=!!session;
+    if(!isAdmin&&tab!=="scan"&&tab!=="login")tab="scan";
+    render();loadR();
+  });
+  loadS();loadC();
+  sb.channel("pelanggaran").on("postgres_changes",{event:"*",schema:"public"},reloadAll).subscribe();
+}
+function vLogin(){
+  $("#app").innerHTML=`<div class="card" style="max-width:420px;margin:auto"><h2>Login Admin</h2>
+  <label>Email</label><input id="lEm" type="email" autocomplete="username"><label>Kata sandi</label><input id="lPw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')masuk()">
+  <div class="bar" style="margin-top:12px"><button class="btn" onclick="masuk()">Masuk</button></div><div id="lMsg"></div></div>`;
+}
+async function masuk(){
+  try{const{error}=await sb.auth.signInWithPassword({email:$("#lEm").value.trim(),password:$("#lPw").value});if(error)throw error;tab="rekap";render()}
+  catch(e){$("#lMsg").innerHTML='<div class="msg er">Email atau kata sandi salah.</div>'}
+}
+function render(){
+  const tabs=[["scan","Scan QR"]];
+  if(isAdmin)tabs.push(["rekap","Rekap Pelanggaran"],["bulan","Rekap Bulanan"],["kelas","Daftar Kelas"],["siswa","Data Siswa"],["kartu","Cetak Kartu QR"],["out","Keluar"]);else tabs.push(["login","Login Admin"]);
+  $("#nav").innerHTML=tabs.map(([k,l])=>`<button class="${tab===k?"on":""}" onclick="go('${k}')">${l}</button>`).join("");
+  if(!CONFIGURED){$("#app").innerHTML='<div class="card"><h2>Supabase belum dikonfigurasi</h2><p>Isi <code>SUPABASE_URL</code> dan <code>SUPABASE_KEY</code> di bagian atas script file ini (lihat panduan).</p></div>';return}
+  if(tab!=="scan")stopScan();
+  ({login:vLogin,scan:vScan,rekap:vRekap,bulan:vBulan,kelas:vKelas,siswa:vSiswa,kartu:vKartu}[tab]||vScan)();
+}
+function go(t){if(t==="out"){sb.auth.signOut();t="scan"}tab=t;found=null;flash=null;render()}
+
+/* ---------- SCAN ---------- */
+function vScan(){
+  if(scanner&&found===null&&$("#reader")){return}
+  $("#app").innerHTML=`<div class="card"><h2>Scan QR Code Siswa</h2>
+  <p class="mu">Arahkan kamera ke QR code pada kartu siswa yang melanggar tata tertib. Laporan akan masuk ke admin untuk ditentukan jenis pelanggarannya.</p>
+  ${flash?`<div class="msg ${flash.t}">${esc(flash.m)}</div>`:""}
+  ${found?`<div class="msg"><b>${esc(found.nama)}</b><br><span class="mu">NIS ${esc(found.id)} · Kelas ${esc(found.kelas)}</span></div>
+    <div class="bar"><button class="btn" onclick="kirim()">Kirim Laporan Pelanggaran</button><button class="btn s" onclick="found=null;flash=null;vScan();startScan()">Batal</button></div>`
+  :`<div id="reader"></div><div class="bar" style="margin-top:12px"><button class="btn s" id="camBtn" onclick="startScan()">Aktifkan Kamera</button></div>
+    <label>Atau masukkan NIS secara manual</label><div class="bar"><input id="manual" placeholder="NIS siswa" style="min-width:160px"><button class="btn" onclick="cari($('#manual').value.trim())">Cari</button></div>`}
+  </div>`;
+  if(!found)startScan();
+}
+function startScan(){
+  if(scanner||!$("#reader")||typeof Html5Qrcode==="undefined")return;
+  try{
+    scanner=new Html5Qrcode("reader");
+    scanner.start({facingMode:"environment"},{fps:10,qrbox:240},txt=>{cari(txt.trim())},()=>{}).catch(()=>{scanner=null;flash={t:"er",m:"Kamera tidak dapat dibuka. Izinkan akses kamera atau gunakan input NIS manual."};vScan()});
+  }catch(e){scanner=null}
+}
+function stopScan(){if(scanner){const s=scanner;scanner=null;try{s.stop().then(()=>s.clear()).catch(()=>{})}catch(e){}}}
+function cari(nis){
+  if(!nis)return;
+  const s=students.find(x=>x.id===nis);
+  stopScan();
+  if(!s){flash={t:"er",m:"Siswa dengan NIS “"+nis+"” tidak ditemukan."};found=null;setTimeout(()=>{vScan()},50);return}
+  found=s;flash=null;vScan();
+}
+async function kirim(){
+  if(!db||!found)return;
+  const id="r"+Date.now()+Math.random().toString(36).slice(2,6);
+  try{
+    await db.doc("reports/"+id).set({nis:found.id,nama:found.nama,kelas:found.kelas,ts:Date.now(),jenis:"",alasan:"",status:"baru"});
+    flash={t:"ok",m:"Laporan untuk "+found.nama+" berhasil dikirim ke admin."};
+  }catch(e){flash={t:"er",m:"Gagal mengirim laporan. Pastikan Anda sudah masuk."}}
+  found=null;vScan();
+}
+
+/* ---------- REKAP ---------- */
+function kelasList(){return [...new Set([...classes.map(c=>c.nama),...students.map(s=>s.kelas)].filter(Boolean))]}
+function vRekap(){
+  const list=reports.filter(r=>(!fKelas||r.kelas===fKelas)&&(!fJenis||(fJenis==="-"?!r.jenis:r.jenis===fJenis))&&(!fStatus||r.status===fStatus)&&(!q||(r.nama+r.nis).toLowerCase().includes(q.toLowerCase())));
+  const baru=reports.filter(r=>r.status==="baru").length;
+  $("#app").innerHTML=`<div class="card"><h2>Rekap Laporan Pelanggaran</h2>
+  <p class="mu">${reports.length} laporan · <b>${baru}</b> menunggu ditentukan jenis pelanggarannya.</p>
+  <div class="bar noprint"><input style="min-width:150px" placeholder="Cari nama / NIS" value="${esc(q)}" oninput="q=this.value;vRekapKeep(this)">
+  <select onchange="fKelas=this.value;vRekap()"><option value="">Semua kelas</option>${kelasList().map(k=>`<option ${k===fKelas?"selected":""}>${esc(k)}</option>`).join("")}</select>
+  <select onchange="fJenis=this.value;vRekap()"><option value="">Semua jenis</option><option value="-" ${fJenis==="-"?"selected":""}>Belum ditentukan</option>${JENIS.map(j=>`<option ${j===fJenis?"selected":""}>${j}</option>`).join("")}</select>
+  <select onchange="fStatus=this.value;vRekap()"><option value="">Semua status</option><option value="baru" ${fStatus==="baru"?"selected":""}>Baru</option><option value="sudah" ${fStatus==="sudah"?"selected":""}>Sudah diproses</option></select>
+  <button class="btn s" onclick="csv()">Unduh CSV</button><button class="btn s" onclick="print()">Cetak</button></div>
+  <div class="tw"><table><tr><th>Waktu</th><th>Siswa</th><th>Kelas</th><th>Pelanggaran</th><th>Alasan (jika terlambat)</th><th>Status</th><th class="noprint"></th></tr>
+  ${list.map(r=>`<tr><td>${fmt(r.ts)}</td><td><b>${esc(r.nama)}</b><br><span class="mu">${esc(r.nis)}</span></td><td>${esc(r.kelas)}</td>
+  <td><select data-id="${r.id}" onchange="pilih(this)">
+    <option value="">— pilih pelanggaran —</option>${JENIS.map(j=>`<option ${j===r.jenis?"selected":""}>${j}</option>`).join("")}</select></td>
+  <td>${r.jenis===JENIS[0]?`<textarea rows="2" id="al-${r.id}" placeholder="Tulis alasan terlambat" onblur="alasan('${r.id}')">${esc(r.alasan)}</textarea>`:"–"}</td>
+  <td><span class="tag ${r.status}">${r.status==="baru"?"Baru":"Diproses"}</span></td>
+  <td class="noprint"><button class="btn d x" onclick="hapusR('${r.id}')">Hapus</button></td></tr>`).join("")||`<tr><td colspan="7" class="mu">Belum ada laporan.</td></tr>`}
+  </table></div></div>`;
+}
+function vRekapKeep(el){const p=el.selectionStart;vRekap();const n=$("#app input");n.focus();n.setSelectionRange(p,p)}
+async function pilih(el){
+  const jenis=el.value;const id=el.dataset.id;
+  try{await db.doc("reports/"+id).update({jenis,status:jenis?"sudah":"baru",alasan:jenis===JENIS[0]?(reports.find(r=>r.id===id)?.alasan||""):""})}catch(e){alert("Gagal menyimpan.")}
+}
+async function alasan(id){const v=$("#al-"+id).value;try{await db.doc("reports/"+id).update({alasan:v})}catch(e){}}
+async function hapusR(id){if(confirm("Hapus laporan ini?"))try{await db.doc("reports/"+id).delete()}catch(e){}}
+function csv(){
+  const rows=[["Waktu","NIS","Nama","Kelas","Pelanggaran","Alasan","Status"],...reports.map(r=>[fmt(r.ts),r.nis,r.nama,r.kelas,r.jenis,r.alasan,r.status])];
+  const data="\ufeff"+rows.map(r=>r.map(c=>'"'+String(c??"").replace(/"/g,'""')+'"').join(",")).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"text/csv"}));a.download="rekap-pelanggaran.csv";a.click();
+}
+
+/* ---------- SISWA ---------- */
+let edit=null;
+function vSiswa(){
+  const e=edit||{};
+  $("#app").innerHTML=`<div class="card"><h2>${edit?"Edit Siswa":"Tambah Siswa"}</h2>
+  <div class="row"><div><label>NIS (dipakai sebagai isi QR)</label><input id="sNis" value="${esc(e.id)}" ${edit?"disabled":""}></div>
+  <div><label>Nama lengkap</label><input id="sNama" value="${esc(e.nama)}"></div></div>
+  <label>Kelas</label><select id="sKelas"><option value="">— pilih kelas —</option>${kelasList().map(k=>`<option ${k===e.kelas?"selected":""}>${esc(k)}</option>`).join("")}</select>${kelasList().length?"":'<p class="mu">Belum ada kelas. Tambahkan dulu di menu Daftar Kelas.</p>'}
+  <div class="bar" style="margin-top:12px"><button class="btn" onclick="simpanS()">${edit?"Simpan Perubahan":"Tambah"}</button>${edit?`<button class="btn s" onclick="edit=null;vSiswa()">Batal</button>`:""}</div>
+  <div id="sMsg"></div></div>
+  <div class="card"><h2>Daftar Siswa (${students.length})</h2>
+  <div class="tw"><table><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th></th></tr>
+  ${students.map(s=>`<tr><td>${esc(s.id)}</td><td>${esc(s.nama)}</td><td>${esc(s.kelas)}</td><td style="white-space:nowrap"><button class="btn s x" onclick="edit=students.find(x=>x.id==='${esc(s.id)}');vSiswa();scrollTo(0,0)">Edit</button> <button class="btn d x" onclick="hapusS('${esc(s.id)}')">Hapus</button></td></tr>`).join("")||`<tr><td colspan="4" class="mu">Belum ada data siswa.</td></tr>`}
+  </table></div></div>`;
+}
+async function simpanS(){
+  const nis=$("#sNis").value.trim(),nama=$("#sNama").value.trim(),kelas=$("#sKelas").value.trim();
+  if(!nis||!nama||!kelas||/[\/\\'"\s]/.test(nis)){$("#sMsg").innerHTML='<div class="msg er">Isi semua kolom. NIS tidak boleh mengandung spasi atau tanda baca khusus.</div>';return}
+  try{await db.doc("students/"+nis).set({nama,kelas});edit=null;vSiswa()}catch(e){$("#sMsg").innerHTML='<div class="msg er">Gagal menyimpan data.</div>'}
+}
+async function hapusS(id){if(confirm("Hapus siswa ini?"))try{await db.doc("students/"+id).delete()}catch(e){}}
+
+/* ---------- KELAS ---------- */
+function vKelas(){
+  const cnt=k=>students.filter(s=>s.kelas===k).length;
+  $("#app").innerHTML=`<div class="card"><h2>Tambah Kelas</h2><div class="bar"><input id="kNama" placeholder="Nama kelas, mis. X-1" style="min-width:200px"><button class="btn" onclick="simpanK()">Tambah</button></div><div id="kMsg"></div></div>
+  <div class="card"><h2>Daftar Kelas (${classes.length})</h2><div class="tw"><table><tr><th>Kelas</th><th>Jumlah siswa</th><th></th></tr>
+  ${classes.map(c=>`<tr><td><b>${esc(c.nama)}</b></td><td>${cnt(c.nama)}</td><td><button class="btn d x" onclick="hapusK('${c.id}')">Hapus</button></td></tr>`).join("")||'<tr><td colspan="3" class="mu">Belum ada kelas.</td></tr>'}</table></div></div>`;
+}
+async function simpanK(){
+  const n=$("#kNama").value.trim();
+  if(!n){$("#kMsg").innerHTML='<div class="msg er">Nama kelas tidak boleh kosong.</div>';return}
+  if(classes.some(c=>c.nama.toLowerCase()===n.toLowerCase())){$("#kMsg").innerHTML='<div class="msg er">Kelas sudah ada.</div>';return}
+  try{await db.doc("classes/k"+Date.now()).set({nama:n})}catch(e){$("#kMsg").innerHTML='<div class="msg er">Gagal menyimpan.</div>'}
+}
+async function hapusK(id){
+  const c=classes.find(x=>x.id===id);if(!c)return;
+  if(students.some(s=>s.kelas===c.nama)){alert("Kelas masih memiliki siswa. Pindahkan atau hapus siswanya dulu.");return}
+  if(confirm("Hapus kelas "+c.nama+"?"))try{await db.doc("classes/"+id).delete()}catch(e){}
+}
+
+/* ---------- REKAP BULANAN ---------- */
+function vBulan(){
+  const JK=[...JENIS,"Belum ditentukan"];
+  const key=r=>{const d=new Date(r.ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")};
+  const lab=k=>new Date(k+"-01T00:00:00").toLocaleDateString("id-ID",{month:"long",year:"numeric"});
+  const jn=r=>r.jenis||"Belum ditentukan";
+  const cn=(a,j)=>a.filter(r=>jn(r)===j).length;
+  const months=[...new Set(reports.map(key))].sort().reverse();
+  if(!fBulan||!months.includes(fBulan))fBulan=months[0]||"";
+  const head=`<tr><th>${"{X}"}</th>${JK.map(j=>`<th>${j}</th>`).join("")}<th>Total</th></tr>`;
+  const inM=reports.filter(r=>key(r)===fBulan);
+  const kl=[...new Set(inM.map(r=>r.kelas))].sort();
+  const sw={};inM.forEach(r=>{const k=r.nis;(sw[k]=sw[k]||{nama:r.nama,kelas:r.kelas,n:0}).n++});
+  const sl=Object.values(sw).sort((a,b)=>b.n-a.n);
+  $("#app").innerHTML=`<div class="card"><h2>Jumlah Pelanggaran per Bulan</h2><p class="mu">Total seluruh laporan: <b>${reports.length}</b></p>
+  <div class="tw"><table>${head.replace("{X}","Bulan")}
+  ${months.map(m=>{const a=reports.filter(r=>key(r)===m);return `<tr><td><b>${lab(m)}</b></td>${JK.map(j=>`<td>${cn(a,j)}</td>`).join("")}<td><b>${a.length}</b></td></tr>`}).join("")||`<tr><td colspan="${JK.length+2}" class="mu">Belum ada laporan.</td></tr>`}</table></div></div>
+  ${months.length?`<div class="card"><div class="bar"><h2 style="margin:0">Detail bulan</h2><select onchange="fBulan=this.value;vBulan()">${months.map(m=>`<option value="${m}" ${m===fBulan?"selected":""}>${lab(m)}</option>`).join("")}</select><button class="btn s noprint" onclick="print()">Cetak</button></div>
+  <h2>Per kelas</h2><div class="tw"><table>${head.replace("{X}","Kelas")}
+  ${kl.map(k=>{const a=inM.filter(r=>r.kelas===k);return `<tr><td><b>${esc(k)}</b></td>${JK.map(j=>`<td>${cn(a,j)}</td>`).join("")}<td><b>${a.length}</b></td></tr>`}).join("")}</table></div>
+  <h2 style="margin-top:16px">Per siswa (terbanyak)</h2><div class="tw"><table><tr><th>Siswa</th><th>Kelas</th><th>Jumlah pelanggaran</th></tr>
+  ${sl.map(s=>`<tr><td>${esc(s.nama)}</td><td>${esc(s.kelas)}</td><td><b>${s.n}</b></td></tr>`).join("")}</table></div></div>`:""}`;
+}
+
+/* ---------- KARTU QR ---------- */
+function vKartu(){
+  $("#app").innerHTML=`<div class="card"><h2>Cetak Kartu QR Siswa</h2><div class="bar noprint"><select onchange="fKelas=this.value;vKartu()"><option value="">Semua kelas</option>${kelasList().map(k=>`<option ${k===fKelas?"selected":""}>${esc(k)}</option>`).join("")}</select><button class="btn" onclick="print()">Cetak</button></div>
+  <div class="qrs" id="qrs"></div></div>`;
+  const box=$("#qrs");
+  students.filter(s=>!fKelas||s.kelas===fKelas).forEach(s=>{
+    const c=document.createElement("div");c.className="qc";
+    const qd=document.createElement("div");qd.className="q";c.appendChild(qd);
+    const t=document.createElement("div");t.innerHTML=`<b style="font-size:13px">${esc(s.nama)}</b><br><span style="font-size:12px">${esc(s.id)} · ${esc(s.kelas)}</span>`;c.appendChild(t);
+    box.appendChild(c);
+    try{new QRCode(qd,{text:s.id,width:120,height:120})}catch(e){}
+  });
+}
+init();
+</script>
+</body>
+</html>
