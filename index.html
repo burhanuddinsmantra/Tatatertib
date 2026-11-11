@@ -51,6 +51,7 @@ th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-ali
 const JENIS=["Terlambat datang","Tidak memasukkan baju","Merokok di sekolah","Panjang rambut tidak sesuai aturan"];
 let db=null,usr=null,isAdmin=false,tab="scan",students=[],reports=[],classes=[],fBulan="",scanner=null,found=null,flash=null;
 let fKelas="",fJenis="",fStatus="",q="";
+let fKelasL="",fJenisL="",fStatusL="",qL="",rErr="";
 let selectedJenisScan="",sendingReport=false;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -63,7 +64,7 @@ let sb=null;
 const byNama=(a,b)=>(a.nama||"").localeCompare(b.nama||"","id",{numeric:true});
 async function loadS(){const{data}=await sb.from("students").select("*");students=(data||[]).sort((a,b)=>(a.kelas||"").localeCompare(b.kelas||"","id",{numeric:true})||byNama(a,b));if(tab!=="scan"||!found)render()}
 async function loadC(){const{data}=await sb.from("classes").select("*");classes=(data||[]).sort(byNama);if(tab!=="scan"&&tab!=="login")render()}
-async function loadR(){if(!isAdmin){reports=[];return}const{data}=await sb.from("reports").select("*").order("ts",{ascending:false});reports=data||[];if(tab==="rekap"||tab==="bulan")render()}
+async function loadR(){const{data,error}=await sb.from("reports").select("*").order("ts",{ascending:false});rErr=error?(error.message||String(error)):"";reports=data||[];if(tab==="rekap"||tab==="bulan"||tab==="lihat")render()}
 const reloadAll=()=>{loadS();loadC();loadR()};
 db={doc:p=>{const[t,id]=p.split("/");const ck=async r=>{const{error}=await r;if(error)throw error;reloadAll()};return{
   set:d=>ck(t==="reports"?sb.from(t).insert({id,...d}):sb.from(t).upsert({id,...d})),
@@ -86,7 +87,7 @@ function init(){
   sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
   sb.auth.onAuthStateChange((ev,session)=>{
     isAdmin=!!session;
-    if(!isAdmin&&tab!=="scan"&&tab!=="login")tab="scan";
+    if(!isAdmin&&tab!=="scan"&&tab!=="login"&&tab!=="lihat")tab="scan";
     render();loadR();
   });
   loadS();loadC();
@@ -102,12 +103,12 @@ async function masuk(){
   catch(e){const m=String(e.message||e);$("#lMsg").innerHTML='<div class="msg er">Gagal masuk: '+esc(/Invalid login/i.test(m)?"email atau kata sandi salah (atau akun belum dibuat/dikonfirmasi di Supabase).":/not confirmed/i.test(m)?"email belum dikonfirmasi. Di Supabase buka Authentication > Users, klik akun, lalu Confirm user.":m)+'</div>'}
 }
 function render(){
-  const tabs=[["scan","Scan QR"]];
-  if(isAdmin)tabs.push(["rekap","Rekap Pelanggaran"],["bulan","Rekap Bulanan"],["kelas","Daftar Kelas"],["siswa","Data Siswa"],["kartu","Cetak Kartu QR"],["out","Keluar"]);else tabs.push(["login","Login Admin"]);
+  const tabs=[["scan","Scan QR"],["lihat","Rekap Pelanggaran"]];
+  if(isAdmin)tabs.push(["rekap","Kelola Laporan"],["bulan","Rekap Bulanan"],["kelas","Daftar Kelas"],["siswa","Data Siswa"],["kartu","Cetak Kartu QR"],["out","Keluar"]);else tabs.push(["login","Login Admin"]);
   $("#nav").innerHTML=tabs.map(([k,l])=>`<button class="${tab===k?"on":""}" onclick="go('${k}')">${l}</button>`).join("");
   if(!CONFIGURED){$("#app").innerHTML='<div class="card"><h2>Supabase belum dikonfigurasi</h2><p>Isi <code>SUPABASE_URL</code> dan <code>SUPABASE_KEY</code> di bagian atas script file ini (lihat panduan).</p></div>';return}
   if(tab!=="scan")stopScan();
-  ({login:vLogin,scan:vScan,rekap:vRekap,bulan:vBulan,kelas:vKelas,siswa:vSiswa,kartu:vKartu}[tab]||vScan)();
+  ({login:vLogin,scan:vScan,lihat:vLihat,rekap:vRekap,bulan:vBulan,kelas:vKelas,siswa:vSiswa,kartu:vKartu}[tab]||vScan)();
 }
 function go(t){if(t==="out"){sb.auth.signOut();t="scan"}tab=t;found=null;flash=null;render()}
 
@@ -199,6 +200,26 @@ async function kirim(){
     vScan();
   }
 }
+
+/* ---------- REKAP PELANGGARAN (PUBLIK, HANYA LIHAT) ---------- */
+function vLihat(){
+  const list=reports.filter(r=>(!fKelasL||r.kelas===fKelasL)&&(!fJenisL||(fJenisL==="-"?!r.jenis:r.jenis===fJenisL))&&(!fStatusL||(r.status||"baru")===fStatusL)&&(!qL||(r.nama+r.nis).toLowerCase().includes(qL.toLowerCase())));
+  const baru=reports.filter(r=>(r.status||"baru")==="baru").length;
+  $("#app").innerHTML=`<div class="card"><h2>Rekap Pelanggaran</h2>
+  <p class="mu">${reports.length} laporan · ${baru} baru · ${reports.length-baru} sudah diproses</p>
+  ${rErr?`<div class="msg er">Data rekap tidak dapat dimuat: ${esc(rErr)}. Pastikan policy SELECT untuk tabel reports sudah dibuat di Supabase.</div>`:""}
+  <div class="bar noprint"><input id="qL" style="min-width:150px" placeholder="Cari nama / NIS" value="${esc(qL)}" oninput="qL=this.value;vLihatKeep(this)">
+  <select onchange="fKelasL=this.value;vLihat()"><option value="">Semua kelas</option>${kelasList().map(k=>`<option ${k===fKelasL?"selected":""}>${esc(k)}</option>`).join("")}</select>
+  <select onchange="fJenisL=this.value;vLihat()"><option value="">Semua jenis</option><option value="-" ${fJenisL==="-"?"selected":""}>Belum ditentukan</option>${JENIS.map(j=>`<option ${j===fJenisL?"selected":""}>${j}</option>`).join("")}</select>
+  <select onchange="fStatusL=this.value;vLihat()"><option value="">Semua status</option><option value="baru" ${fStatusL==="baru"?"selected":""}>Baru</option><option value="sudah" ${fStatusL==="sudah"?"selected":""}>Sudah diproses</option></select></div>
+  <div class="tw"><table><tr><th>Waktu</th><th>Siswa</th><th>Kelas</th><th>Pelanggaran</th><th>Alasan</th><th>Status</th></tr>
+  ${list.map(r=>`<tr><td>${fmt(r.ts)}</td><td><b>${esc(r.nama)}</b><br><span class="mu">${esc(r.nis)}</span></td><td>${esc(r.kelas)}</td>
+  <td>${r.jenis?esc(r.jenis):'<span class="mu">Belum ditentukan</span>'}</td>
+  <td>${r.jenis===JENIS[0]&&r.alasan?esc(r.alasan):"–"}</td>
+  <td>${(r.status||"baru")==="baru"?'<span class="tag baru">Baru</span>':'<span class="tag sudah">Sudah diproses</span>'}</td></tr>`).join("")||`<tr><td colspan="6" class="mu">Belum ada laporan.</td></tr>`}
+  </table></div></div>`;
+}
+function vLihatKeep(el){const p=el.selectionStart;vLihat();const n=$("#qL");n.focus();n.setSelectionRange(p,p)}
 
 /* ---------- REKAP ---------- */
 function kelasList(){return [...new Set([...classes.map(c=>c.nama),...students.map(s=>s.kelas)].filter(Boolean))]}
