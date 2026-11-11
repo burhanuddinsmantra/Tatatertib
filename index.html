@@ -211,29 +211,62 @@ function vRekap(){
   <select onchange="fKelas=this.value;vRekap()"><option value="">Semua kelas</option>${kelasList().map(k=>`<option ${k===fKelas?"selected":""}>${esc(k)}</option>`).join("")}</select>
   <select onchange="fJenis=this.value;vRekap()"><option value="">Semua jenis</option><option value="-" ${fJenis==="-"?"selected":""}>Belum ditentukan</option>${JENIS.map(j=>`<option ${j===fJenis?"selected":""}>${j}</option>`).join("")}</select>
   <select onchange="fStatus=this.value;vRekap()"><option value="">Semua status</option><option value="baru" ${fStatus==="baru"?"selected":""}>Baru</option><option value="sudah" ${fStatus==="sudah"?"selected":""}>Sudah diproses</option></select>
-  <button class="btn s" onclick="csv()">Unduh CSV</button><button class="btn s" onclick="print()">Cetak</button></div>
+  <button class="btn s" onclick="exportRekapExcel()">Unduh Excel (.xls)</button><button class="btn s" onclick="print()">Cetak</button></div>
   <div class="tw"><table><tr><th>Waktu</th><th>Siswa</th><th>Kelas</th><th>Pelanggaran</th><th>Alasan (jika terlambat)</th><th>Status</th><th class="noprint"></th></tr>
   ${list.map(r=>`<tr><td>${fmt(r.ts)}</td><td><b>${esc(r.nama)}</b><br><span class="mu">${esc(r.nis)}</span></td><td>${esc(r.kelas)}</td>
   <td><select data-id="${r.id}" onchange="pilih(this)">
     <option value="">— pilih pelanggaran —</option>${JENIS.map(j=>`<option ${j===r.jenis?"selected":""}>${j}</option>`).join("")}</select></td>
   <td>${r.jenis===JENIS[0]?`<textarea rows="2" id="al-${r.id}" placeholder="Tulis alasan terlambat" onblur="alasan('${r.id}')">${esc(r.alasan)}</textarea>`:"–"}</td>
-  <td><span class="tag ${r.status}">${r.status==="baru"?"Baru":"Diproses"}</span></td>
+  <td>
+    ${((r.status||"baru")==="baru")
+      ? `<span class="tag baru">Baru</span> <button class="btn x" onclick="prosesLaporan('${r.id}')">Sudah diproses</button>`
+      : `<span class="tag sudah">Sudah diproses</span>`}
+  </td>
   <td class="noprint"><button class="btn d x" onclick="hapusR('${r.id}')">Hapus</button></td></tr>`).join("")||`<tr><td colspan="7" class="mu">Belum ada laporan.</td></tr>`}
   </table></div></div>`;
 }
 function vRekapKeep(el){const p=el.selectionStart;vRekap();const n=$("#app input");n.focus();n.setSelectionRange(p,p)}
 async function pilih(el){
   const jenis=el.value;const id=el.dataset.id;
-  try{await db.doc("reports/"+id).update({jenis,status:jenis?"sudah":"baru",alasan:jenis===JENIS[0]?(reports.find(r=>r.id===id)?.alasan||""):""})}catch(e){alert("Gagal menyimpan: "+errMsg(e))}
+  const dataLama=reports.find(r=>String(r.id)===String(id));
+  try{
+    // Mengubah jenis pelanggaran tidak otomatis mengubah status pemrosesan.
+    await db.doc("reports/"+id).update({
+      jenis,
+      alasan:jenis===JENIS[0]?(dataLama?.alasan||""):""
+    });
+  }catch(e){alert("Gagal menyimpan: "+errMsg(e))}
+}
+async function prosesLaporan(id){
+  if(!confirm("Tandai laporan ini sebagai SUDAH DIPROSES? Status Baru akan dihilangkan."))return;
+  try{
+    await db.doc("reports/"+id).update({status:"sudah"});
+  }catch(e){
+    alert("Gagal memperbarui status: "+errMsg(e));
+  }
 }
 async function alasan(id){const v=$("#al-"+id).value;try{await db.doc("reports/"+id).update({alasan:v})}catch(e){}}
 async function hapusR(id){if(confirm("Hapus laporan ini?"))try{await db.doc("reports/"+id).delete()}catch(e){}}
-function csv(){
-  const rows=[["Waktu","NIS","Nama","Kelas","Pelanggaran","Alasan","Status"],...reports.map(r=>[fmt(r.ts),r.nis,r.nama,r.kelas,r.jenis,r.alasan,r.status])];
-  const data="\ufeff"+rows.map(r=>r.map(c=>'"'+String(c??"").replace(/"/g,'""')+'"').join(",")).join("\n");
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"text/csv"}));a.download="rekap-pelanggaran.csv";a.click();
+function xmlEsc(v){return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;")}
+function excelCell(v){
+  const isNum=typeof v==="number"&&Number.isFinite(v);
+  return `<Cell><Data ss:Type="${isNum?"Number":"String"}">${xmlEsc(v)}</Data></Cell>`;
 }
-
+function excelSheet(name, rows){
+  return `<Worksheet ss:Name="${xmlEsc(name).slice(0,31)}"><Table>${rows.map(row=>`<Row>${row.map(excelCell).join("")}</Row>`).join("")}</Table></Worksheet>`;
+}
+function downloadExcel(filename, sheets){
+  const xml=`<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${sheets.join("")}</Workbook>`;
+  const blob=new Blob(["\ufeff",xml],{type:"application/vnd.ms-excel;charset=utf-8"});
+  const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportRekapExcel(){
+  const list=reports.filter(r=>(!fKelas||r.kelas===fKelas)&&(!fJenis||(fJenis==="-"?!r.jenis:r.jenis===fJenis))&&(!fStatus||r.status===fStatus)&&(!q||(r.nama+r.nis).toLowerCase().includes(q.toLowerCase())));
+  const rows=[["Waktu","NIS","Nama","Kelas","Pelanggaran","Alasan","Status"],...list.map(r=>[fmt(r.ts),r.nis,r.nama,r.kelas,r.jenis||"Belum ditentukan",r.alasan,r.status==="baru"?"Baru":"Diproses"])];
+  downloadExcel("rekap-pelanggaran.xls",[excelSheet("Rekap Pelanggaran",rows)]);
+}
 /* ---------- SISWA ---------- */
 let edit=null;
 function vSiswa(){
@@ -285,6 +318,22 @@ async function hapusK(id){
 }
 
 /* ---------- REKAP BULANAN ---------- */
+function exportBulananExcel(){
+  const jenis=[...JENIS,"Belum ditentukan"];
+  const key=r=>{const d=new Date(r.ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")};
+  const label=k=>new Date(k+"-01T00:00:00").toLocaleDateString("id-ID",{month:"long",year:"numeric"});
+  const jn=r=>r.jenis||"Belum ditentukan";
+  const months=[...new Set(reports.map(key))].sort();
+  const monthly=[["Bulan",...jenis,"Total"],...months.map(m=>{const a=reports.filter(r=>key(r)===m);return [label(m),...jenis.map(j=>a.filter(r=>jn(r)===j).length),a.length]})];
+  const selected=reports.filter(r=>key(r)===fBulan);
+  const byClass=[["Kelas",...jenis,"Total"],...[...new Set(selected.map(r=>r.kelas))].sort().map(k=>{const a=selected.filter(r=>r.kelas===k);return [k,...jenis.map(j=>a.filter(r=>jn(r)===j).length),a.length]})];
+  const studentsMap={};selected.forEach(r=>{const k=r.nis;(studentsMap[k]=studentsMap[k]||{nis:r.nis,nama:r.nama,kelas:r.kelas,total:0}).total++});
+  const byStudent=[["NIS","Nama","Kelas","Jumlah Pelanggaran"],...Object.values(studentsMap).sort((a,b)=>b.total-a.total).map(x=>[x.nis,x.nama,x.kelas,x.total])];
+  const detail=[["Waktu","NIS","Nama","Kelas","Pelanggaran","Alasan","Status"],...selected.map(r=>[fmt(r.ts),r.nis,r.nama,r.kelas,jn(r),r.alasan,r.status==="baru"?"Baru":"Diproses"])];
+  const sheets=[excelSheet("Rekap Bulanan",monthly)];
+  if(fBulan){sheets.push(excelSheet("Per Kelas",byClass),excelSheet("Per Siswa",byStudent),excelSheet("Detail Laporan",detail))}
+  downloadExcel("rekap-bulanan.xls",sheets);
+}
 function vBulan(){
   const JK=[...JENIS,"Belum ditentukan"];
   const key=r=>{const d=new Date(r.ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")};
@@ -301,7 +350,7 @@ function vBulan(){
   $("#app").innerHTML=`<div class="card"><h2>Jumlah Pelanggaran per Bulan</h2><p class="mu">Total seluruh laporan: <b>${reports.length}</b></p>
   <div class="tw"><table>${head.replace("{X}","Bulan")}
   ${months.map(m=>{const a=reports.filter(r=>key(r)===m);return `<tr><td><b>${lab(m)}</b></td>${JK.map(j=>`<td>${cn(a,j)}</td>`).join("")}<td><b>${a.length}</b></td></tr>`}).join("")||`<tr><td colspan="${JK.length+2}" class="mu">Belum ada laporan.</td></tr>`}</table></div></div>
-  ${months.length?`<div class="card"><div class="bar"><h2 style="margin:0">Detail bulan</h2><select onchange="fBulan=this.value;vBulan()">${months.map(m=>`<option value="${m}" ${m===fBulan?"selected":""}>${lab(m)}</option>`).join("")}</select><button class="btn s noprint" onclick="print()">Cetak</button></div>
+  ${months.length?`<div class="card"><div class="bar"><h2 style="margin:0">Detail bulan</h2><select onchange="fBulan=this.value;vBulan()">${months.map(m=>`<option value="${m}" ${m===fBulan?"selected":""}>${lab(m)}</option>`).join("")}</select><button class="btn s noprint" onclick="exportBulananExcel()">Unduh Excel (.xls)</button><button class="btn s noprint" onclick="print()">Cetak</button></div>
   <h2>Per kelas</h2><div class="tw"><table>${head.replace("{X}","Kelas")}
   ${kl.map(k=>{const a=inM.filter(r=>r.kelas===k);return `<tr><td><b>${esc(k)}</b></td>${JK.map(j=>`<td>${cn(a,j)}</td>`).join("")}<td><b>${a.length}</b></td></tr>`}).join("")}</table></div>
   <h2 style="margin-top:16px">Per siswa (terbanyak)</h2><div class="tw"><table><tr><th>Siswa</th><th>Kelas</th><th>Jumlah pelanggaran</th></tr>
