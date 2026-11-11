@@ -51,6 +51,7 @@ th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-ali
 const JENIS=["Terlambat datang","Tidak memasukkan baju","Merokok di sekolah","Panjang rambut tidak sesuai aturan"];
 let db=null,usr=null,isAdmin=false,tab="scan",students=[],reports=[],classes=[],fBulan="",scanner=null,found=null,flash=null;
 let fKelas="",fJenis="",fStatus="",q="";
+let selectedJenisScan="",sendingReport=false;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=t=>new Date(t).toLocaleString("id-ID",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
@@ -113,39 +114,90 @@ function go(t){if(t==="out"){sb.auth.signOut();t="scan"}tab=t;found=null;flash=n
 /* ---------- SCAN ---------- */
 function vScan(){
   if(scanner&&found===null&&$("#reader")){return}
-  $("#app").innerHTML=`<div class="card"><h2>Scan QR Code Siswa</h2>
-  <p class="mu">Arahkan kamera ke QR code pada kartu siswa yang melanggar tata tertib. Laporan akan masuk ke admin untuk ditentukan jenis pelanggarannya.</p>
-  ${flash?`<div class="msg ${flash.t}">${esc(flash.m)}</div>`:""}
-  ${found?`<div class="msg"><b>${esc(found.nama)}</b><br><span class="mu">NIS ${esc(found.id)} · Kelas ${esc(found.kelas)}</span></div>
-    <div class="bar"><button class="btn" onclick="kirim()">Kirim Laporan Pelanggaran</button><button class="btn s" onclick="found=null;flash=null;vScan();startScan()">Batal</button></div>`
-  :`<div id="reader"></div><div class="bar" style="margin-top:12px"><button class="btn s" id="camBtn" onclick="startScan()">Aktifkan Kamera</button></div>
-    <label>Atau masukkan NIS secara manual</label><div class="bar"><input id="manual" placeholder="NIS siswa" style="min-width:160px"><button class="btn" onclick="cari($('#manual').value.trim())">Cari</button></div>`}
+  const pilihan=JENIS.map((j,i)=>`
+    <button type="button" class="jenis-option ${selectedJenisScan===j?"on":""}" onclick="pilihJenisScan('${esc(j)}')">
+      ${i+1}. ${esc(j)}
+      <small>${selectedJenisScan===j?"Jenis pelanggaran dipilih":"Klik untuk memilih jenis pelanggaran"}</small>
+    </button>`).join("");
+  $("#app").innerHTML=`<div class="card">
+    <h2>1. Pilih Jenis Pelanggaran</h2>
+    <p class="mu">Pilih jenis pelanggaran terlebih dahulu. Setelah itu, scan QR pada kartu siswa. Laporan akan otomatis dikirim ke menu admin.</p>
+    <div class="jenis-grid">${pilihan}</div>
+    ${selectedJenisScan?`<div class="msg ok">Jenis dipilih: <b>${esc(selectedJenisScan)}</b></div>`:`<div class="msg">Silakan pilih salah satu jenis pelanggaran sebelum melakukan scan.</div>`}
+  </div>
+  <div class="card">
+    <h2>2. Scan QR Code Siswa</h2>
+    ${!selectedJenisScan?`<p class="mu">Pemindai QR dan pencarian NIS akan aktif setelah jenis pelanggaran dipilih.</p>`:`
+      ${flash?`<div class="msg ${flash.t}">${esc(flash.m)}</div>`:""}
+      ${found?`<div class="msg"><b>${esc(found.nama)}</b><br><span class="mu">NIS ${esc(found.id)} · Kelas ${esc(found.kelas)}</span></div>
+        <p class="mu">Mengirim laporan secara otomatis...</p>`
+      :`<div id="reader"></div>
+        <div class="bar" style="margin-top:12px"><button class="btn s" id="camBtn" onclick="startScan()">Aktifkan Kamera</button></div>
+        <label>Atau masukkan NIS secara manual</label>
+        <div class="bar"><input id="manual" placeholder="NIS siswa" style="min-width:160px"><button class="btn" onclick="cari($('#manual').value.trim())">Cari dan Kirim</button></div>`}
+    `}
   </div>`;
-  if(!found)startScan();
+  if(selectedJenisScan&&!found)startScan();
+}
+function pilihJenisScan(jenis){
+  if(!JENIS.includes(jenis))return;
+  stopScan();
+  selectedJenisScan=jenis;
+  flash=null;
+  render();
 }
 function startScan(){
+  if(!selectedJenisScan){flash={t:"er",m:"Pilih jenis pelanggaran terlebih dahulu."};vScan();return}
   if(scanner||!$("#reader")||typeof Html5Qrcode==="undefined")return;
   try{
     scanner=new Html5Qrcode("reader");
-    scanner.start({facingMode:"environment"},{fps:10,qrbox:240},txt=>{cari(txt.trim())},()=>{}).catch(()=>{scanner=null;flash={t:"er",m:"Kamera tidak dapat dibuka. Izinkan akses kamera atau gunakan input NIS manual."};vScan()});
+    scanner.start({facingMode:"environment"},{fps:10,qrbox:240},txt=>{cari(txt.trim())},()=>{}).catch(e=>{
+      scanner=null;
+      flash={t:"er",m:"Kamera tidak dapat dibuka. Izinkan akses kamera atau gunakan input NIS manual."};
+      vScan();
+    });
   }catch(e){scanner=null}
 }
 function stopScan(){if(scanner){const s=scanner;scanner=null;try{s.stop().then(()=>s.clear()).catch(()=>{})}catch(e){}}}
-function cari(nis){
-  if(!nis)return;
-  const s=students.find(x=>x.id===nis);
+async function cari(nis){
+  if(!nis||sendingReport)return;
+  if(!selectedJenisScan){flash={t:"er",m:"Pilih jenis pelanggaran terlebih dahulu."};vScan();return}
+  const s=students.find(x=>String(x.id)===String(nis));
   stopScan();
-  if(!s){flash={t:"er",m:"Siswa dengan NIS “"+nis+"” tidak ditemukan."};found=null;setTimeout(()=>{vScan()},50);return}
-  found=s;flash=null;vScan();
+  if(!s){
+    flash={t:"er",m:"Siswa dengan NIS “"+nis+"” tidak ditemukan. Silakan coba lagi."};
+    found=null;vScan();return;
+  }
+  found=s;
+  flash={t:"ok",m:"QR/NIS ditemukan. Laporan sedang dikirim..."};
+  vScan();
+  await kirim();
 }
 async function kirim(){
-  if(!db||!found)return;
+  if(!db||!found||!selectedJenisScan||sendingReport)return;
+  sendingReport=true;
+  const siswa=found;
+  const jenis=selectedJenisScan;
   const id="r"+Date.now()+Math.random().toString(36).slice(2,6);
   try{
-    await db.doc("reports/"+id).set({nis:found.id,nama:found.nama,kelas:found.kelas,ts:Date.now(),jenis:"",alasan:"",status:"baru"});
-    flash={t:"ok",m:"Laporan untuk "+found.nama+" berhasil dikirim ke admin."};
-  }catch(e){flash={t:"er",m:"Gagal mengirim laporan. Pastikan Anda sudah masuk."}}
-  found=null;vScan();
+    await db.doc("reports/"+id).set({
+      nis:siswa.id,
+      nama:siswa.nama,
+      kelas:siswa.kelas,
+      ts:Date.now(),
+      jenis:jenis,
+      alasan:"",
+      status:"baru"
+    });
+    flash={t:"ok",m:"Laporan berhasil dikirim ke admin: "+siswa.nama+" — "+jenis+"."};
+  }catch(e){
+    console.error("Gagal mengirim laporan:",e);
+    flash={t:"er",m:"Gagal mengirim laporan: "+errMsg(e)};
+  }finally{
+    found=null;
+    sendingReport=false;
+    vScan();
+  }
 }
 
 /* ---------- REKAP ---------- */
@@ -154,7 +206,7 @@ function vRekap(){
   const list=reports.filter(r=>(!fKelas||r.kelas===fKelas)&&(!fJenis||(fJenis==="-"?!r.jenis:r.jenis===fJenis))&&(!fStatus||r.status===fStatus)&&(!q||(r.nama+r.nis).toLowerCase().includes(q.toLowerCase())));
   const baru=reports.filter(r=>r.status==="baru").length;
   $("#app").innerHTML=`<div class="card"><h2>Rekap Laporan Pelanggaran</h2>
-  <p class="mu">${reports.length} laporan · <b>${baru}</b> menunggu ditentukan jenis pelanggarannya.</p>
+  <p class="mu">${reports.length} laporan · <b>${baru}</b> laporan baru menunggu ditinjau admin.</p>
   <div class="bar noprint"><input style="min-width:150px" placeholder="Cari nama / NIS" value="${esc(q)}" oninput="q=this.value;vRekapKeep(this)">
   <select onchange="fKelas=this.value;vRekap()"><option value="">Semua kelas</option>${kelasList().map(k=>`<option ${k===fKelas?"selected":""}>${esc(k)}</option>`).join("")}</select>
   <select onchange="fJenis=this.value;vRekap()"><option value="">Semua jenis</option><option value="-" ${fJenis==="-"?"selected":""}>Belum ditentukan</option>${JENIS.map(j=>`<option ${j===fJenis?"selected":""}>${j}</option>`).join("")}</select>
